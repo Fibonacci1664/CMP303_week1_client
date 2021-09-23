@@ -25,10 +25,10 @@
 #define SERVERPORT 5555
 
 // The message the server will send when the client connects
-#define WELCOME "hello"
+#define WELCOME "You're connected!"
 
 // The (fixed) size of message that we send between the two programs
-#define MESSAGESIZE 40
+#define MESSAGESIZE 32
 
 
 // Prototypes
@@ -42,6 +42,7 @@ int main()
 	// Initialise the WinSock library -- we want version 2.2.
 	WSADATA w;
 	int error = WSAStartup(0x0202, &w);
+
 	if (error != 0)
 	{
 		die("WSAStartup failed");
@@ -52,24 +53,41 @@ int main()
 	}
 
 	// Create a TCP socket that we'll connect to the server
-	SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+	SOCKET clientSocket = socket(AF_INET, SOCK_STREAM, 0);
+
 	// FIXME: check for errors from socket
+	// ############# FIXED #############
+	if (clientSocket == INVALID_SOCKET)
+	{
+		die("socket function failed with error");
+	}
+	else
+	{
+		wprintf(L"socket function succeeded\n");
+	}
 
 	// Fill out a sockaddr_in structure with the address that
 	// we want to connect to.
-	sockaddr_in addr;
-	addr.sin_family = AF_INET;
+	sockaddr_in clientAddr;
+	clientAddr.sin_family = AF_INET;
 	// htons converts the port number to network byte order (big-endian).
-	addr.sin_port = htons(SERVERPORT);
-	addr.sin_addr.s_addr = inet_addr(SERVERIP);
+	clientAddr.sin_port = htons(SERVERPORT);
+	clientAddr.sin_addr.s_addr = inet_addr(SERVERIP);
+
+	// Test to make sure the IP address is valid
+	// ############# FIXED #############
+	if (clientAddr.sin_addr.s_addr == INADDR_NONE)
+	{
+		die("not a legitimate client IP address");
+	}
 	
 	// inet_ntoa formats an IP address as a string.
-	printf("IP address to connect to: %s\n", inet_ntoa(addr.sin_addr));
+	printf("IP address to connect to: %s\n", inet_ntoa(clientAddr.sin_addr));
 	// ntohs does the opposite of htons.
-	printf("Port number to connect to: %d\n\n", ntohs(addr.sin_port));
+	printf("Port number to connect to: %d\n\n", ntohs(clientAddr.sin_port));
 
 	// Connect the socket to the server.
-	if (connect(sock, (const sockaddr *) &addr, sizeof addr) == SOCKET_ERROR)
+	if (connect(clientSocket, (const sockaddr *) &clientAddr, sizeof clientAddr) == SOCKET_ERROR)
 	{
 		die("connect failed");
 	}
@@ -77,18 +95,43 @@ int main()
 	printf("Connected to server\n");
 
 	// We'll use this buffer to hold what we receive from the server.
-	char buffer[MESSAGESIZE];
+	char rcvBuffer[MESSAGESIZE];
 
 	// We expect the server to send us a welcome message (WELCOME) when we connect.
 
-	// Receive a message.
-	recv(sock, buffer, MESSAGESIZE, 0);
 	// FIXME: check for errors, or for unexpected message size
+	// ############# FIXED #############
+	int count = recv(clientSocket, rcvBuffer, MESSAGESIZE, 0);
+	bool flag = false;
+
+	if (count == SOCKET_ERROR)
+	{
+		die("welcome message recv error, client side");
+		flag = true;
+	}
+
+	if (count <= 0)
+	{
+		printf("Server closed connection\n");
+		flag = true;
+	}
+
+	if (count != MESSAGESIZE)
+	{
+		die("Got strange-sized message from server");
+	}
 
 	// Check it's what we expected.
-	if (memcmp(buffer, WELCOME, strlen(WELCOME)) != 0)
+	if (memcmp(rcvBuffer, WELCOME, strlen(WELCOME)) != 0)
 	{
 		die("Expected \"" WELCOME "\" upon connection, but got something else");
+	}
+
+	if (flag)
+	{
+		closesocket(clientSocket);
+		WSACleanup();
+		return 0;
 	}
 
 	while (true)
@@ -102,16 +145,30 @@ int main()
 		// Now "line" contains what the user typed (without the trailing \n).
 
 		// Copy the line into the buffer, filling the rest with dashes.
-		memset(buffer, '-', MESSAGESIZE);
-		memcpy(buffer, line.c_str(), line.size());
-		// FIXME: if line.size() is bigger than the buffer it'll overflow (and likely corrupt memory)
+		memset(rcvBuffer, '-', MESSAGESIZE);
 
+		// FIXME: if line.size() is bigger than the buffer it'll overflow (and likely corrupt memory)
+		// // ############# FIXED #############
+		// Make sure line.size() is NOT bigger than the buffer BEFORE we try
+		// and copy it into the rcvBuffer.
+		if (line.size() > sizeof(rcvBuffer))
+		{
+			die("message is too large to send");
+		}
+
+		memcpy(rcvBuffer, line.c_str(), line.size());
+		
 		// Send the message to the server.
-		send(sock, buffer, MESSAGESIZE, 0);
+		int msg = send(clientSocket, rcvBuffer, MESSAGESIZE, 0);
 		// FIXME: check for error from send
+		// ############# FIXED #############
+		if (msg == SOCKET_ERROR)
+		{
+			die("send error, client side");
+		}
 
 		// Read a response back from the server.
-		int count = recv(sock, buffer, MESSAGESIZE, 0);
+		int count = recv(clientSocket, rcvBuffer, MESSAGESIZE, 0);
 		// FIXME: check for error from recv
 		if (count <= 0)
 		{
@@ -120,14 +177,14 @@ int main()
 		}
 
 		printf("Received %d bytes from the server: '", count);
-		fwrite(buffer, 1, count, stdout);
+		fwrite(rcvBuffer, 1, count, stdout);
 		printf("'\n");
 	}
 
 	printf("Quitting\n");
 
 	// Close the socket and clean up the sockets library.
-	closesocket(sock);
+	closesocket(clientSocket);
 	WSACleanup();
 
 	return 0;

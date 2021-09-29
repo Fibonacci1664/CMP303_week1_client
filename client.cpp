@@ -86,6 +86,14 @@ int main()
 	// ntohs does the opposite of htons.
 	printf("Port number to connect to: %d\n\n", ntohs(clientAddr.sin_port));
 
+	// NOT SURE YOU WOULD WANT TO DO THIS???
+	/*int bindAddr = bind(clientSocket, (const sockaddr*) &clientAddr, sizeof(clientAddr));
+
+	if (bindAddr != 0)
+	{
+		die("client bind failed");
+	}*/
+
 	// Connect the socket to the server.
 	if (connect(clientSocket, (const sockaddr *) &clientAddr, sizeof clientAddr) == SOCKET_ERROR)
 	{
@@ -151,12 +159,13 @@ int main()
 		// // ############# FIXED #############
 		// Make sure line.size() is NOT bigger than the buffer BEFORE we try
 		// and copy it into the rcvBuffer.
-		if (line.size() > sizeof(rcvBuffer))
+		/*if (line.size() > sizeof(rcvBuffer))
 		{
 			die("message is too large to send");
-		}
+		}*/
 
-		memcpy(rcvBuffer, line.c_str(), line.size());
+		// Copy into rcvBuffer from the line, the min value of either the line.size() or the MESSAGESIZE
+		memcpy(rcvBuffer, line.c_str(), min(line.size(), MESSAGESIZE));
 		
 		// Send the message to the server.
 		int msg = send(clientSocket, rcvBuffer, MESSAGESIZE, 0);
